@@ -2,7 +2,7 @@
 
 ## 导入项目
 ```shell
-go get -u github.com/findbyid/jenkins@latest
+go get -u github.com/findbyid/go-jenkins@latest
 ```
 
 ## 使用Docker启动一个Jenkins
@@ -16,7 +16,7 @@ sudo docker run -itd -p 8082:8080 -v /etc/localtime:/etc/localtime --restart=alw
 package main
 
 import (
-	"github.com/findbyid/jenkins"
+	"github.com/findbyid/go-jenkins/jenkins"
 	"fmt"
 )
 
