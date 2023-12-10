@@ -14,6 +14,17 @@ import (
 	"time"
 )
 
+const (
+	// status code
+	StatusQueue     = 1 // 队列中
+	StatusInProcess = 2 // 构建任务开始
+	StatusCompleted = 3 // 构建任务结束/取消
+	// status text
+	ResultSuccess = "SUCCESS"
+	ResultFailure = "FAILURE"
+	ResultAborted = "ABORTED"
+)
+
 type JenkinsBuilder struct {
 	baseUrl  string
 	username string
@@ -53,7 +64,7 @@ func (j *JenkinsBuilder) RunBuild(jobName string, params map[string]string, call
 		time.Sleep(time.Second)
 	}
 
-	callback(1, fmt.Sprint(queueId), "", nil)
+	callback(StatusQueue, fmt.Sprint(queueId), "", nil)
 
 	log.Println("查询排队状态:", queueId)
 	failedCount = 0
@@ -69,7 +80,7 @@ func (j *JenkinsBuilder) RunBuild(jobName string, params map[string]string, call
 			continue
 		}
 		if cancelled, ok := res["cancelled"]; ok && fmt.Sprint(cancelled) == "true" { // 正在排队的时候取消了
-			callback(3, "", "ABORTED", nil)
+			callback(StatusCompleted, "", "ABORTED", nil)
 			return nil
 		}
 		if executable, ok := res["executable"]; ok && executable != nil {
@@ -96,15 +107,46 @@ func (j *JenkinsBuilder) RunBuild(jobName string, params map[string]string, call
 		if !statusNotified {
 			statusNotified = true
 
-			callback(2, fmt.Sprint(res["number"]), fmt.Sprint(res["url"]), res)
+			callback(StatusInProcess, fmt.Sprint(res["number"]), fmt.Sprint(res["url"]), res)
 		}
 		if fmt.Sprint(res["building"]) == "false" {
-			callback(3, fmt.Sprint(res["number"]), fmt.Sprint(res["result"]), res) // SUCCESS, FAILURE, ABORTED
+			callback(StatusCompleted, fmt.Sprint(res["number"]), fmt.Sprint(res["result"]), res) // SUCCESS, FAILURE, ABORTED
 			break
 		}
 		time.Sleep(time.Second * 5)
 	}
 	return nil
+}
+
+// 查询构建结果
+func (j *JenkinsBuilder) GetTaskResultByQueueId(jobName, queueId string) (string, error) {
+	res, err := j.getQueueInfo(queueId)
+	if err != nil {
+		return "", err
+	}
+	if cancelled, ok := res["cancelled"]; ok && fmt.Sprint(cancelled) == "true" { // 正在排队的时候取消了
+		return "ABORTED", nil
+	}
+	if executable, ok := res["executable"]; ok && executable != nil {
+		temp := executable.(map[string]interface{})
+		taskId := strconv.FormatFloat(temp["number"].(float64), 'f', -1, 32)
+		return j.GetTaskResultByTaskId(jobName, taskId)
+	}
+	return "", nil
+}
+
+// 查询构建结果
+func (j *JenkinsBuilder) GetTaskResultByTaskId(jobName, taskId string) (string, error) {
+	res, err := j.getTaskInfo(jobName, string(taskId))
+	if err != nil {
+		return "", err
+	}
+
+	if fmt.Sprint(res["building"]) == "false" {
+		// callback(StatusCompleted, fmt.Sprint(res["number"]), fmt.Sprint(res["result"]), res) // SUCCESS, FAILURE, ABORTED
+		return fmt.Sprint(res["result"]), nil
+	}
+	return fmt.Sprint(res["result"]), nil
 }
 
 // 发起构建请求
